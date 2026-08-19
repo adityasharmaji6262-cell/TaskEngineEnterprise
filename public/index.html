@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ TaskEngine Enterprise - Task & Sprint Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#0f172a',
+                            900: '#0a0f1e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glow-amber {
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+        }
+
+        .glow-emerald {
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+        }
+
+        .status-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .7; }
+        }
+
+        .task-card {
+            transition: all 0.2s ease;
+        }
+
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            z-index: 10;
+        }
+
+        .dropdown-menu.active {
+            display: block;
+            animation: slideDown 0.2s ease;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toast {
+            animation: slideInRight 0.3s ease, slideOutRight 0.3s ease 2.7s;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slideOutRight {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(400px); opacity: 0; }
+        }
+
+        .empty-state {
+            border: 2px dashed #475569;
+            background: linear-gradient(135deg, rgba(51, 65, 85, 0.3) 0%, rgba(30, 41, 59, 0.3) 100%);
+        }
+
+        .quick-action-btn {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .task-card:hover .quick-action-btn {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-gray-100 min-h-screen">
+
+    <!-- Top Navigation Bar -->
+    <nav class="bg-slate-850 border-b border-slate-700 sticky top-0 z-50">
+        <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logo & Title -->
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-3xl">⚡</span>
+                        <div>
+                            <h1 class="text-xl font-bold text-white">TaskEngine Enterprise</h1>
+                            <div class="flex items-center space-x-2 text-xs">
+                                <span class="flex items-center space-x-1">
+                                    <span class="w-2 h-2 bg-emerald-500 rounded-full status-pulse"></span>
+                                    <span class="text-emerald-400">System Online</span>
+                                </span>
+                                <span class="text-slate-500">•</span>
+                                <span class="text-slate-400">v1.4</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="hidden md:flex flex-1 max-w-2xl mx-8">
+                    <div class="relative w-full">
+                        <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        <input 
+                            type="text" 
+                            id="searchInput"
+                            placeholder="Filter tasks by title... [Ctrl+K]" 
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg pl-11 pr-4 py-2.5 text-sm text-gray-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent hover:border-slate-600 transition-colors"
+                        />
+                        <kbd class="absolute right-4 top-1/2 transform -translate-y-1/2 px-2 py-1 text-xs bg-slate-700 border border-slate-600 rounded text-slate-400">Ctrl+K</kbd>
+                    </div>
+                </div>
+
+                <!-- Right Side Actions -->
+                <div class="flex items-center space-x-4">
+                    <button class="relative p-2 text-slate-400 hover:text-white transition-colors">
+                        <i class="fas fa-bell text-xl"></i>
+                        <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-850"></span>
+                    </button>
+
+                    <div class="flex items-center space-x-3 cursor-pointer group">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-semibold">
+                            AE
+                        </div>
+                        <div class="hidden lg:block text-sm">
+                            <div class="text-white font-medium">alex@enterprise.dev</div>
+                        </div>
+                        <i class="fas fa-chevron-down text-xs text-slate-400 group-hover:text-white transition-colors"></i>
+                    </div>
+
+                    <button id="newTaskBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors">
+                        <i class="fas fa-plus"></i>
+                        <span class="hidden sm:inline">New Task</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-6 right-6 z-50 space-y-3 pointer-events-none"></div>
+
+    <!-- Main Content -->
+    <main class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Summary Stats Bar -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Total Active Tasks -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-400 text-sm font-medium">Total Active Tasks</p>
+                        <p id="stat-total" class="text-3xl font-bold text-white mt-2">0</p>
+                    </div>
+                    <div class="w-12 h-12 bg-indigo-500/10 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-tasks text-2xl text-indigo-500"></i>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-500 mt-3">Live synced with SQLite</p>
+            </div>
+
+            <!-- High Priority Blockers -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-400 text-sm font-medium">High Priority Blockers</p>
+                        <p class="text-3xl font-bold text-white mt-2 flex items-center space-x-2">
+                            <span id="stat-high">0</span>
+                            <span class="text-2xl">🔥</span>
+                        </p>
+                    </div>
+                    <div class="w-12 h-12 bg-red-500/10 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-exclamation-triangle text-2xl text-red-500"></i>
+                    </div>
+                </div>
+                <p class="text-xs text-red-400 mt-3">Requires immediate attention</p>
+            </div>
+
+            <!-- Sprint Completion Rate -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <p class="text-slate-400 text-sm font-medium">Sprint Completion</p>
+                        <p id="stat-completion" class="text-3xl font-bold text-white mt-2">0%</p>
+                    </div>
+                    <div class="w-12 h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-chart-line text-2xl text-emerald-500"></i>
+                    </div>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-2 mt-3">
+                    <div id="stat-progress-bar" class="progress-bar bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Automated Background Jobs -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-400 text-sm font-medium">Background Jobs</p>
+                        <p class="text-lg font-semibold text-white mt-2">Cron Active</p>
+                    </div>
+                    <div class="w-12 h-12 bg-amber-500/10 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-clock text-2xl text-amber-500"></i>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mt-3">Next cleanup run: <span class="text-amber-400">00:00 UTC</span></p>
+            </div>
+        </div>
+
+        <!-- Quick Action & Filter Toolbar -->
+        <div class="bg-slate-850 border border-slate-700 rounded-lg p-5 space-y-4">
+            <!-- Quick Add Task -->
+            <div class="flex flex-col lg:flex-row gap-3">
+                <input 
+                    type="text" 
+                    id="quickTaskTitle"
+                    placeholder="Quick add task title..." 
+                    class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent hover:border-slate-600 transition-colors"
+                />
+                <select 
+                    id="quickTaskPriority"
+                    class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                    <option value="LOW">Low Priority</option>
+                    <option value="MEDIUM" selected>Medium Priority</option>
+                    <option value="HIGH">High Priority</option>
+                </select>
+                <button 
+                    id="quickAddBtn"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center space-x-2"
+                >
+                    <i class="fas fa-plus"></i>
+                    <span>Add Task</span>
+                </button>
+            </div>
+
+            <!-- Filter Pills -->
+            <div class="flex flex-wrap gap-2">
+                <button class="filter-pill bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/30 active:scale-95" data-filter="all">
+                    <i class="fas fa-list mr-2"></i>All Tasks
+                </button>
+                <button class="filter-pill bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-all active:scale-95" data-filter="high">
+                    <i class="fas fa-exclamation-circle mr-2"></i>High Priority
+                </button>
+            </div>
+        </div>
+
+        <!-- Kanban Board Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Column 1: Backlog / Pending -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg overflow-hidden flex flex-col" style="max-height: calc(100vh - 450px); min-height: 600px;">
+                <div class="bg-slate-800 border-b border-slate-700 px-5 py-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-xl">📋</span>
+                        <h3 class="font-semibold text-white">Backlog / Pending</h3>
+                    </div>
+                    <span id="badge-backlog" class="bg-slate-700 text-slate-300 px-2.5 py-1 rounded-full text-xs font-medium">0</span>
+                </div>
+                <div id="backlogColumn" class="p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1"></div>
+            </div>
+
+            <!-- Column 2: In Progress -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg overflow-hidden flex flex-col" style="max-height: calc(100vh - 450px); min-height: 600px;">
+                <div class="bg-slate-800 border-b border-slate-700 px-5 py-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-xl">⚡</span>
+                        <h3 class="font-semibold text-white">In Progress</h3>
+                    </div>
+                    <span id="badge-progress" class="bg-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full text-xs font-medium glow-amber">0</span>
+                </div>
+                <div id="progressColumn" class="p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1"></div>
+            </div>
+
+            <!-- Column 3: Completed -->
+            <div class="bg-slate-850 border border-slate-700 rounded-lg overflow-hidden flex flex-col" style="max-height: calc(100vh - 450px); min-height: 600px;">
+                <div class="bg-slate-800 border-b border-slate-700 px-5 py-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-xl">✅</span>
+                        <h3 class="font-semibold text-white">Completed</h3>
+                    </div>
+                    <span id="badge-completed" class="bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full text-xs font-medium glow-emerald">0</span>
+                </div>
+                <div id="completedColumn" class="p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1"></div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <script>
+        const socket = io();
+        let tasksList = [];
+        let activeFilter = 'all';
+
+        const priorityStyles = {
+            HIGH: 'bg-red-500/20 text-red-400 border-red-500/30',
+            MEDIUM: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+            LOW: 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+        };
+
+        async function fetchTasks() {
+            try {
+                const res = await fetch('/api/tasks');
+                tasksList = await res.json();
+                renderTasks();
+            } catch (err) {
+                console.error('Failed to fetch tasks:', err);
+            }
+        }
+
+        function createTaskCard(task) {
+            const currentStatus = task.status;
+            return `
+                <div class="task-card bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3 relative" data-task-id="${task.id}" data-priority="${task.priority}">
+                    <h4 class="text-white font-medium text-sm leading-relaxed pr-8">${task.title}</h4>
+                    
+                    <div class="absolute top-3 right-3 flex items-center space-x-1">
+                        ${currentStatus === 'PENDING' ? `
+                            <button onclick="moveTask(${task.id}, 'IN_PROGRESS')" class="quick-action-btn bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-2 py-1 rounded text-xs font-medium border border-amber-500/30" title="Move to In Progress">
+                                <i class="fas fa-play text-xs"></i>
+                            </button>
+                        ` : ''}
+                        ${currentStatus === 'IN_PROGRESS' ? `
+                            <button onclick="moveTask(${task.id}, 'PENDING')" class="quick-action-btn bg-slate-600/50 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded text-xs font-medium border border-slate-500" title="Move to Backlog">
+                                <i class="fas fa-arrow-left text-xs"></i>
+                            </button>
+                            <button onclick="moveTask(${task.id}, 'COMPLETED')" class="quick-action-btn bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-2 py-1 rounded text-xs font-medium border border-emerald-500/30" title="Mark Complete">
+                                <i class="fas fa-check text-xs"></i>
+                            </button>
+                        ` : ''}
+                        ${currentStatus === 'COMPLETED' ? `
+                            <button onclick="moveTask(${task.id}, 'IN_PROGRESS')" class="quick-action-btn bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-2 py-1 rounded text-xs font-medium border border-amber-500/30" title="Reopen">
+                                <i class="fas fa-undo text-xs"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="px-2.5 py-1 rounded-md text-xs font-medium border ${priorityStyles[task.priority] || priorityStyles.MEDIUM}">
+                            ${task.priority}
+                        </span>
+                        <span class="text-xs text-slate-400 flex items-center space-x-1">
+                            <i class="far fa-clock"></i>
+                            <span>${new Date(task.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </span>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-700">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-semibold">AE</div>
+                            <span class="text-xs text-slate-500 font-mono">#TSK-${task.id}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="deleteTask(${task.id})" class="text-slate-400 hover:text-red-400 transition-colors p-1.5 hover:bg-slate-700 rounded" title="Soft Delete">
+                                <i class="fas fa-trash text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createEmptyState(type) {
+            const labels = {
+                PENDING: { text: 'No tasks in backlog', icon: 'inbox' },
+                IN_PROGRESS: { text: 'No tasks in progress', icon: 'play-circle' },
+                COMPLETED: { text: 'No completed tasks', icon: 'check-circle' }
+            };
+            return `
+                <div class="empty-state rounded-lg p-8 text-center">
+                    <i class="fas fa-${labels[type].icon} text-4xl text-slate-600 mb-3"></i>
+                    <p class="text-slate-500 text-sm font-medium">${labels[type].text}</p>
+                </div>
+            `;
+        }
+
+        function renderTasks() {
+            let filtered = tasksList;
+            if (activeFilter === 'high') {
+                filtered = tasksList.filter(t => t.priority === 'HIGH');
+            }
+
+            const backlogTasks = filtered.filter(t => t.status === 'PENDING');
+            const progressTasks = filtered.filter(t => t.status === 'IN_PROGRESS');
+            const completedTasks = filtered.filter(t => t.status === 'COMPLETED');
+
+            document.getElementById('backlogColumn').innerHTML = backlogTasks.length ? backlogTasks.map(createTaskCard).join('') : createEmptyState('PENDING');
+            document.getElementById('progressColumn').innerHTML = progressTasks.length ? progressTasks.map(createTaskCard).join('') : createEmptyState('IN_PROGRESS');
+            document.getElementById('completedColumn').innerHTML = completedTasks.length ? completedTasks.map(createTaskCard).join('') : createEmptyState('COMPLETED');
+
+            // Update Column Count Badges
+            document.getElementById('badge-backlog').textContent = backlogTasks.length;
+            document.getElementById('badge-progress').textContent = progressTasks.length;
+            document.getElementById('badge-completed').textContent = completedTasks.length;
+
+            // Update Metrics
+            const total = tasksList.length;
+            const highCount = tasksList.filter(t => t.priority === 'HIGH' && t.status !== 'COMPLETED').length;
+            const completedCount = tasksList.filter(t => t.status === 'COMPLETED').length;
+            const percent = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-high').textContent = highCount;
+            document.getElementById('stat-completion').textContent = `${percent}%`;
+            document.getElementById('stat-progress-bar').style.width = `${percent}%`;
+        }
+
+        async function moveTask(id, status) {
+            await fetch(`/api/tasks/${id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            showToast(`Task #TSK-${id} updated to ${status}`, 'success');
+        }
+
+        async function deleteTask(id) {
+            await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+            showToast(`Task #TSK-${id} soft-deleted`, 'info');
+        }
+
+        document.getElementById('quickAddBtn').addEventListener('click', async () => {
+            const title = document.getElementById('quickTaskTitle').value.trim();
+            const priority = document.getElementById('quickTaskPriority').value;
+            if (!title) return alert('Please enter a task title');
+
+            await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, priority })
+            });
+
+            document.getElementById('quickTaskTitle').value = '';
+            showToast('New task added successfully!', 'success');
+        });
+
+        document.getElementById('newTaskBtn').addEventListener('click', () => {
+            document.getElementById('quickTaskTitle').focus();
+        });
+
+        // Search Listener
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            document.querySelectorAll('.task-card').forEach(card => {
+                const title = card.querySelector('h4').textContent.toLowerCase();
+                card.style.display = title.includes(term) ? 'block' : 'none';
+            });
+        });
+
+        // Ctrl+K Shortcut
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+            }
+        });
+
+        // Filter Pills Listener
+        document.querySelectorAll('.filter-pill').forEach(pill => {
+            pill.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-pill').forEach(p => {
+                    p.classList.remove('bg-indigo-600', 'text-white', 'shadow-lg', 'shadow-indigo-500/30');
+                    p.classList.add('bg-slate-700', 'text-slate-300');
+                });
+                const target = e.currentTarget;
+                target.classList.remove('bg-slate-700', 'text-slate-300');
+                target.classList.add('bg-indigo-600', 'text-white', 'shadow-lg', 'shadow-indigo-500/30');
+                activeFilter = target.dataset.filter;
+                renderTasks();
+            });
+        });
+
+        function showToast(message, type = 'success') {
+            const toastContainer = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const color = type === 'success' ? 'emerald' : 'indigo';
+            const icon = type === 'success' ? 'check-circle' : 'info-circle';
+
+            toast.className = `toast pointer-events-auto bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-4 flex items-center space-x-3 min-w-[300px]`;
+            toast.innerHTML = `
+                <div class="w-10 h-10 bg-${color}-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-${icon} text-${color}-400"></i>
+                </div>
+                <div class="flex-1">
+                    <p class="text-white text-sm font-medium">${message}</p>
+                </div>
+            `;
+            toastContainer.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Real-Time WebSocket Synchronization
+        socket.on('task-sync', () => {
+            fetchTasks();
+        });
+
+        // Initial Load
+        fetchTasks();
+    </script>
+</body>
+</html>
